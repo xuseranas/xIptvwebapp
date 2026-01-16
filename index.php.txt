@@ -1,0 +1,115 @@
+<?php
+require_once __DIR__ . '/functions.php';
+
+// fetch a random active ad
+$db = getDB();
+$ad = null;
+$res = $db->query('SELECT * FROM ads WHERE active = 1 ORDER BY RANDOM() LIMIT 1');
+if ($r = $res->fetchArray(SQLITE3_ASSOC)) $ad = $r;
+
+?>
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>IPTV Webapp</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>IPTV Demo</h1>
+    <nav>
+      <?php if (isLoggedIn()): ?>
+        Hello, <?= sanitize(currentUser()['username']) ?> |
+        <a href="user_dashboard.php">My Dashboard</a> |
+        <?php if (isAdmin()): ?><a href="admin_dashboard.php">Admin</a> |<?php endif; ?>
+        <a href="logout.php">Logout</a>
+      <?php else: ?>
+        <a href="login.php">Login</a> | <a href="register.php">Register</a>
+      <?php endif; ?>
+    </nav>
+  </header>
+
+  <main>
+    <?php if ($ad): ?>
+      <div class="ad">
+        <?php if (!empty($ad['image_url'])): ?>
+          <a href="<?= sanitize($ad['target_url']) ?>"><img src="<?= sanitize($ad['image_url']) ?>" alt="<?= sanitize($ad['title']) ?>"></a>
+        <?php else: ?>
+          <a href="<?= sanitize($ad['target_url']) ?>"><strong><?= sanitize($ad['title']) ?></strong></a>
+          <p><?= sanitize($ad['content']) ?></p>
+        <?php endif; ?>
+      </div>
+    <?php endif; ?>
+
+    <section>
+      <h2>Browse iptv-org channels (example: Italy)</h2>
+      <p>Click a channel to open its stream URL (if available).</p>
+      <form method="get" action="index.php">
+        <label>Country code (optional): <input name="country" value="<?= sanitize($_GET['country'] ?? 'IT') ?>"></label>
+        <button type="submit">Load</button>
+      </form>
+
+      <?php
+      $country = isset($_GET['country']) ? preg_replace('/[^A-Za-z]/','',$_GET['country']) : '';
+      $apiUrl = 'api_fetch.php?type=channels' . ($country ? '&country=' . urlencode($country) : '');
+      $channels = [];
+      if (isset($_GET['country']) || !empty($country)) {
+          $json = @file_get_contents($apiUrl);
+          if ($json) {
+              $channels = json_decode($json, true) ?: [];
+          }
+      }
+      ?>
+
+      <?php if ($channels): ?>
+        <ul class="channels">
+        <?php foreach ($channels as $ch): ?>
+          <li>
+            <?php if (!empty($ch['logo'])): ?>
+              <img src="<?= sanitize($ch['logo']) ?>" alt="" class="logo">
+            <?php endif; ?>
+            <strong><?= sanitize($ch['name'] ?? $ch['id']) ?></strong>
+            <?php if (!empty($ch['url'])): ?>
+              <a href="play.php?url=<?= urlencode($ch['url']) ?>" target="_blank">Play (url)</a>
+            <?php elseif (!empty($ch['streams'])): ?>
+              <?php foreach ($ch['streams'] as $s): ?>
+                <a href="play.php?url=<?= urlencode($s) ?>" target="_blank">Play</a>
+              <?php endforeach; ?>
+            <?php endif; ?>
+            <?php if (!empty($ch['country'])): ?>
+              <em><?= sanitize($ch['country']) ?></em>
+            <?php endif; ?>
+          </li>
+        <?php endforeach; ?>
+        </ul>
+      <?php else: ?>
+        <p>No channels loaded yet. Enter a country code and press Load. The server will proxy iptv-org API.</p>
+      <?php endif; ?>
+    </section>
+
+    <section>
+      <h2>Uploaded playlists</h2>
+      <?php
+      $stmt = $db->prepare('SELECT u.id, u.title, u.filename, u.created_at, us.username FROM uploads u JOIN users us ON us.id = u.user_id ORDER BY u.created_at DESC LIMIT 20');
+      $res = $stmt->execute();
+      $uploads = [];
+      while ($r = $res->fetchArray(SQLITE3_ASSOC)) $uploads[] = $r;
+      ?>
+      <?php if ($uploads): ?>
+        <ul>
+        <?php foreach ($uploads as $up): ?>
+          <li>
+            <strong><?= sanitize($up['title'] ?: $up['filename']) ?></strong> by <?= sanitize($up['username']) ?>
+            - <a href="play.php?upload_id=<?= $up['id'] ?>">Open</a>
+            <small><?= sanitize($up['created_at']) ?></small>
+          </li>
+        <?php endforeach; ?>
+        </ul>
+      <?php else: ?>
+        <p>No uploads yet.</p>
+      <?php endif; ?>
+    </section>
+  </main>
+</body>
+</html>

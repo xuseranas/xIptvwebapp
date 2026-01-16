@@ -1,0 +1,58 @@
+<?php
+require_once __DIR__ . '/db.php';
+session_start();
+
+function isLoggedIn() {
+    return !empty($_SESSION['user_id']);
+}
+
+function currentUser() {
+    if (!isLoggedIn()) return null;
+    $db = getDB();
+    $stmt = $db->prepare('SELECT id, username, is_admin FROM users WHERE id = :id');
+    $stmt->bindValue(':id', $_SESSION['user_id'], SQLITE3_INTEGER);
+    $res = $stmt->execute()->fetchArray(SQLITE3_ASSOC);
+    return $res ?: null;
+}
+
+function isAdmin() {
+    $u = currentUser();
+    return $u && $u['is_admin'] == 1;
+}
+
+function requireLogin() {
+    if (!isLoggedIn()) {
+        header('Location: login.php');
+        exit;
+    }
+}
+
+function requireAdmin() {
+    if (!isAdmin()) {
+        header('HTTP/1.1 403 Forbidden');
+        echo "Forbidden";
+        exit;
+    }
+}
+
+function sanitize($s) {
+    return htmlspecialchars($s ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function extract_stream_urls_from_text($text) {
+    // crude m3u parser: find lines that look like URLs or http(s) or udp:// or rtsp:// or mms://
+    $lines = preg_split('/\r\n|\r|\n/', $text);
+    $urls = [];
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line === '' || strpos($line, '#') === 0) continue;
+        if (preg_match('#^(https?://|http://|udp://|rtsp://|rtmp://|mms://|rtp://)#i', $line)) {
+            $urls[] = $line;
+        }
+        // sometimes m3u has "http://..." inside attributes
+        if (preg_match_all('#https?://[^\s\'",]+#i', $line, $m)) {
+            foreach ($m[0] as $u) $urls[] = $u;
+        }
+    }
+    return array_values(array_unique($urls));
+}

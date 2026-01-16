@@ -1,0 +1,39 @@
+<?php
+// Simple proxy to iptv-org JSON API
+// Examples:
+// api_fetch.php?type=channels&country=IT
+// api_fetch.php?type=playlists&country=IT
+
+$type = $_GET['type'] ?? 'channels';
+$country = isset($_GET['country']) ? preg_replace('/[^A-Za-z]/','',$_GET['country']) : '';
+
+$base = 'https://iptv-org.github.io/api';
+
+if ($type === 'channels') {
+    // channels.json or channels.country.json
+    $url = $base . '/channels.json';
+    if ($country) $url = $base . '/channels.' . strtoupper($country) . '.json';
+} elseif ($type === 'playlists') {
+    $url = $base . '/groups.json';
+} else {
+    header('HTTP/1.1 400 Bad Request');
+    echo json_encode(['error' => 'unknown type']);
+    exit;
+}
+
+$opts = [
+    "http" => [
+        "method" => "GET",
+        "header" => "User-Agent: IPTV-Demo/1.0\r\n"
+    ]
+];
+$context = stream_context_create($opts);
+$resp = @file_get_contents($url, false, $context);
+if ($resp === false) {
+    header('HTTP/1.1 502 Bad Gateway');
+    echo json_encode(['error' => 'failed to fetch upstream']);
+    exit;
+}
+
+header('Content-Type: application/json');
+echo $resp;
